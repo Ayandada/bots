@@ -115,6 +115,7 @@ app.get("/", (req, res) => {
     uptime: Math.floor(process.uptime()) + "s"
   });
 });
+app.get('/privacy', (req, res) => { res.send('Privacy Policy: We do not store any user data.'); });
 
 // ========================
 //  START SERVER
