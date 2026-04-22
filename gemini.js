@@ -10,7 +10,7 @@ const MAX_HISTORY = 5;
 
 const SYSTEM_PROMPT = `You are the heartbeat of Pallavi Boutique's Instagram—warm, passionate about Indian wear, and incredibly helpful. You aren't just an "assistant"; you are a curator who loves helping women find their perfect fit.
 
-STRICT RULE: Only output the final customer-facing message. DO NOT include any thinking, internal reasoning, or technical analysis in your response.
+STRICT RULE: You MUST wrap your final customer-facing message in [OUTPUT] ... [/OUTPUT] tags. Everything outside these tags will be ignored. DO NOT include any thinking, internal reasoning, or technical analysis inside the [OUTPUT] tags.
 
 TONE & PERSONALITY:
 - Warm & Welcoming: Use words like "Lovely," "Absolutely," "Certainly."
@@ -60,7 +60,7 @@ async function generateReply(userId, userMessage) {
       const history = getHistory(userId);
       
       // Manually construct the full prompt context for Gemma (more stable than startChat)
-      let fullPrompt = `[SYSTEM INSTRUCTIONS: ${SYSTEM_PROMPT}]\n\n`;
+      let fullPrompt = `${SYSTEM_PROMPT}\n\n[CONVERSATION HISTORY]\n`;
       
       // Add past memory
       history.forEach(turn => {
@@ -69,16 +69,36 @@ async function generateReply(userId, userMessage) {
       });
       
       // Add current message
-      fullPrompt += `Customer: ${userMessage}\nCurator:`;
+      fullPrompt += `Customer: ${userMessage}\nCurator: `;
 
       const result = await model.generateContent(fullPrompt);
-      const reply = result.response.text().trim();
+      const rawResponse = result.response.text();
 
-      // STRICT PERSONA LOCK: Filter out any internal reasoning blocks
-      const cleanReply = reply
-        .replace(/^(User Question|Goal|I need to|Thinking|Thought|Reasoning|Internal|Analysis|Context):[\s\S]*?(?=\w)/gi, "")
-        .replace(/^[*\s]+(Thinking|Thought|Reasoning)[\s\S]*?\n/gi, "")
-        .trim();
+      // EXTRACTION LOGIC: Focus only on the [OUTPUT] block
+      let cleanReply = "";
+      if (rawResponse.toLowerCase().includes("[output]")) {
+        const parts = rawResponse.split(/\[OUTPUT\]/i);
+        cleanReply = parts[parts.length - 1].split(/\[\/OUTPUT\]/i)[0].trim();
+      } else {
+        console.warn("⚠️ [OUTPUT] tags missing. Falling back to heuristic cleaning.");
+        // Fallback: If model forgets tags, use aggressive regex to strip "Thinking" blocks
+        cleanReply = rawResponse
+          .replace(/^(User Question|Goal|I need to|Thinking|Thought|Reasoning|Internal|Analysis|Context|Drafting|Plan|Steps):[\s\S]*?(?=\w)/gi, "")
+          .replace(/^[*\s]+(Thinking|Thought|Reasoning|Drafting|Plan|Steps)[\s\S]*?\n/gi, "")
+          .split(/\n\n/).pop() // Take the last paragraph as a last resort
+          .trim();
+      }
+
+      // Final safety check: if it's still too long or looks like thinking, truncate or use default
+      if (cleanReply.length > 500 || cleanReply.includes("Drafting") || cleanReply.includes("Persona") || cleanReply.includes("Thinking")) {
+        console.warn("⚠️ Still detected leakage in cleanReply, performing emergency strip...");
+        // Emergency: Just take the last 2 sentences if it looks like thinking
+        const sentences = cleanReply.split(/[.!?]+/).filter(s => s.trim().length > 10);
+        if (sentences.length > 0) {
+          cleanReply = sentences.slice(-2).join(". ").trim();
+          if (!cleanReply.endsWith(".") && !cleanReply.endsWith("!")) cleanReply += ".";
+        }
+      }
 
       // Save to history
       addToHistory(userId, "user", userMessage);
@@ -93,21 +113,19 @@ async function generateReply(userId, userMessage) {
       
       // TIERED FALLBACK ENGINE
       if (modelId === "gemma-4-31b-it") {
-        console.log("🔄 Swapping to Backup (Tier 2): Gemma 4 26B.");
         modelId = "gemma-4-26b-a4b-it";
       } else if (modelId === "gemma-4-26b-a4b-it") {
-        console.log("🔄 Swapping to Final Insurance (Tier 3): Gemma 3 27B.");
         modelId = "gemma-3-27b-it";
       }
 
       const waitTime = isQuota ? (attempts * 5000) : 1000;
-      console.log(`⏳ Cooldown ${waitTime/1000}s...`);
       await new Promise(res => setTimeout(res, waitTime));
       
       if (attempts >= MAX_ATTEMPTS) break;
     }
   }
-  return "Sorry, I'm having a little trouble right now! Please DM us again in a bit or WhatsApp us directly 🙏";
+  return "Lovely, we are experiencing a tiny bit of traffic right now! Could you please DM us again in a few minutes or reach out on WhatsApp? 🙏";
 }
 
 module.exports = { generateReply };
+

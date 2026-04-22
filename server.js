@@ -41,6 +41,7 @@ app.post("/webhook", async (req, res) => {
 
   try {
     const body = req.body;
+    console.log("📥 Incoming Webhook:", JSON.stringify(body, null, 2));
 
     if (body.object !== "instagram") return;
 
