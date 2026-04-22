@@ -18,8 +18,6 @@ const MAX_PROCESSED = 1000;
 // ========================
 // Meta sends a GET request to verify your webhook URL
 app.get("/webhook", (req, res) => {
-  console.log("🔍 Webhook Verification Attempt:", JSON.stringify(req.query, null, 2));
-  
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
@@ -29,7 +27,7 @@ app.get("/webhook", (req, res) => {
     return res.status(200).send(challenge);
   }
 
-  console.warn(`❌ Webhook verification failed. Expected: "${VERIFY_TOKEN}", Received: "${token}"`);
+  console.warn("❌ Webhook verification failed. Token mismatch.");
   return res.sendStatus(403);
 });
 
